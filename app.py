@@ -4,34 +4,36 @@ import os
 import tempfile
 from pydub import AudioSegment
 import speech_recognition as sr
+import subprocess
 
 def process_audio_file(file_path, r):
     try:
-        # Determine the file format
         file_format = file_path.split('.')[-1].lower()
         
-        # Handle different audio formats
-        if file_format in ['wav', 'mp3', 'flac', 'm4a']:
-            audio = AudioSegment.from_file(file_path, format=file_format)
-        else:
-            return f"Unsupported file format: {file_format}"
-
-        # Convert to wav for speech recognition
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav:
-            audio.export(temp_wav.name, format='wav')
-            
-            with sr.AudioFile(temp_wav.name) as source:
-                audio_data = r.record(source)
-                try:
-                    text = r.recognize_google(audio_data)
-                    return text
-                except sr.UnknownValueError:
-                    return "Transcription failed: Audio unclear."
-                except sr.RequestError:
-                    return "Transcription failed: API error."
+            temp_wav_path = temp_wav.name
+
+        if file_format == 'm4a':
+            # Use FFmpeg to convert m4a to wav
+            subprocess.run(['ffmpeg', '-i', file_path, '-acodec', 'pcm_s16le', '-ar', '44100', temp_wav_path], check=True)
+        else:
+            audio = AudioSegment.from_file(file_path, format=file_format)
+            audio.export(temp_wav_path, format='wav')
+
+        with sr.AudioFile(temp_wav_path) as source:
+            audio_data = r.record(source)
+            try:
+                text = r.recognize_google(audio_data)
+                return text
+            except sr.UnknownValueError:
+                return "Transcription failed: Audio unclear."
+            except sr.RequestError:
+                return "Transcription failed: API error."
     except Exception as e:
         return f"Error processing file: {str(e)}"
-
+    finally:
+        if 'temp_wav_path' in locals():
+            os.unlink(temp_wav_path)
 def extract_and_transcribe(uploaded_file):
     r = sr.Recognizer()
     transcript_dict = {}
